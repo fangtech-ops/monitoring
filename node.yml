@@ -1,0 +1,5 @@
+- name: install node-exporter
+  hosts: nodeservers
+  become: yes
+  roles:
+  - node-exporter

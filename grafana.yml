@@ -1,0 +1,9 @@
+- name: install monitoring stack
+  hosts: monitorserver
+  become: yes
+  roles:
+    - role: grafana
+      vars:
+        grafana_security:
+          admin_user: admin
+          admin_password: admin

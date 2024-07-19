@@ -1,0 +1,23 @@
+- hosts: all
+  roles:
+    - role: telegraf
+
+      telegraf_outputs:
+        - name: influxdb_v2
+          config:
+            - urls = ["unix:///var/run/influxdb.sock"]
+            - token = "abcd1234"
+            - organization = "MyOrg"
+            - bucket = "telegraf"
+
+      telegraf_inputs:
+        - name: cpu
+          config:
+            - percpu = false
+          tags:
+            - tag1 = "foo"
+            - tag2 = "bar"
+        - name: disk
+          config:
+            - mount_points = ["/", "/data"]
+

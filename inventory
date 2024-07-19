@@ -1,0 +1,8 @@
+[monitorserver]
+35.95.27.22  ansible_user=ubuntu become=yes
+[nodeservers]
+35.87.176.209 ansible_user=ubuntu become=yes
+52.34.140.159 ansible_user=ubuntu become=yes
+34.220.162.24 ansible_user=ubuntu become=yes
+54.149.143.251 ansible_user=ubuntu become=yes
+

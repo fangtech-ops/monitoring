@@ -1,0 +1,5 @@
+- name: install prometheus
+  hosts: monitorserver
+  become: yes
+  roles:
+  - prometheus
