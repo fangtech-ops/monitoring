@@ -1,0 +1,26 @@
+- name: Install influxdb
+  hosts: monitorserver
+  become: yes
+  roles:
+    - role: influxdb
+      influxdb_orgs:
+        - name: MyOrg
+          description: Main organization
+        - name: guest-org
+
+      influxdb_users:
+        - name: admin01
+          org: MyOrg
+          password: abdc1234
+        - name: guest01
+          org: guest-org
+          password: fortinet
+
+      influxdb_buckets:
+        - name: telegraf
+          description: First bucket
+          org: MyOrg
+
+          retention: 1d
+        - name: telegraf2
+          org: MyOrg

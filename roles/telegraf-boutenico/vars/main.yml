@@ -1,0 +1,5 @@
+---
+telegraf_signing_key: https://repos.influxdata.com/influxdata-archive.key
+
+telegraf_repositories:
+  - "deb https://repos.influxdata.com/debian stable main"
