@@ -1,8 +1,8 @@
 [monitorserver]
 44.231.151.241  ansible_user=ubuntu become=yes
 [nodeservers]
-54.245.157.201
-54.187.230.26
-54.188.32.166
-34.214.143.98
+54.245.157.201 ansible_user=ubuntu become=yes
+54.187.230.26 ansible_user=ubuntu become=yes
+54.188.32.166 ansible_user=ubuntu become=yes
+34.214.143.98 ansible_user=ubuntu become=yes
 
