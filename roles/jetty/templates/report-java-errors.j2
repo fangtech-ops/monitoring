@@ -1,0 +1,280 @@
+#!/usr/bin/env python3.8
+
+import argparse
+from collections import Counter, defaultdict
+import datetime
+import gzip
+import os
+import re
+import shutil
+import tempfile
+import socket
+
+import traceback
+import esi_mail
+
+parser = argparse.ArgumentParser(description='Extracts exceptions and stack traces from log files.')
+parser.add_argument('--stack-lines', '-s', help='number of stack trace lines to group by (default: 8)', type=int, default=8)
+parser.add_argument('--when', '-w', help='day to process, in yyyy-mm-dd format or "yesterday"')
+parser.add_argument('--logfile', '-l', help='log file to process')
+parser.add_argument('--node-name', '--service-name', '-n', help='name of the host these logs came from, e.g., "uk-web"')
+parser.add_argument('--silent', '-t', action='store_true', help='print output to stdout instead of sending email notification')
+
+args = parser.parse_args()
+
+MAX_ALT_ERRORS = 3
+MB = 1024 * 1024
+MAX_EMAIL_SIZE = 5 * MB
+MAX_LINE_LENGTH = 300
+
+UNIMPORTANT_ERROR_MESSAGES = set([
+    "org.apache.jasper.JasperException: org.eclipse.jetty.io.RuntimeIOException: org.eclipse.jetty.io.EofException: Closed"
+])
+
+class Record(object):
+    def __init__(self):
+        self.cnt = 0
+        self.where = ""
+    def record(self, where):
+        if self.cnt == 0:
+            self.where = where
+        self.cnt += 1
+
+class Errors(object):
+    def __init__(self, isBackup=False):
+        self.errors = defaultdict(lambda: defaultdict(Record))
+        self.stacktraces = defaultdict(set)
+        self.backup = None
+        if not isBackup:
+            self.backup = Errors(isBackup=True)
+    def record(self, errorname, message, stack, filename, lineno):
+        if self.backup is not None and message in UNIMPORTANT_ERROR_MESSAGES:
+            self.backup.record(errorname, message, stack, filename, lineno)
+        else:
+            error = errorname + message
+            self.errors[error][stack].record("%s:%d" % (filename, lineno))
+            self.stacktraces[stack].add(error)
+    def hasMultipleStacktraces(self, errorname):
+        return len(self.errors[errorname]) > 1
+    def isEmpty(self):
+        return len(self.errors) == 0
+    def deduped(self):
+        # For a given stacktrace, group errors with different errornames when the errornames are
+        # similar. Only do this for errornames associated with a single stacktrace, falling through
+        # to the next case for other errors.
+        #
+        # Group all errors with the same errorname but different stracktraces.
+        #
+        # The result is a series of groups (returned as DedupedError):
+        #     [[errornames, stacktrace, count, where], OR [errorname, stacktraces, count, where]]
+        #
+        # These groups should be appropriate to display together. At best this will group errors
+        # that are actually the same, at worst it will group errors that seem similar or occur
+        # in the same parts of the codebase.
+        groups = []
+        errors_seen = set() # Don't group errors with multiple stacktraces more than once
+        for stacktrace, errornames in self.stacktraces.items():
+            cleanErrornames = []
+            for errorname in errornames:
+                if errorname not in errors_seen:
+                    if self.hasMultipleStacktraces(errorname):
+                        groups.append([errorname])
+                    else:
+                        cleanErrornames.append(errorname)
+                    errors_seen.add(errorname)
+            if len(cleanErrornames) > 0:
+                groups += groupBySimilarity(cleanErrornames)
+        deduped = []
+        for errornames in groups:
+            # Either the group has length 1, or all the errors have the same stracktrace
+            stacktraces = self.errors[errornames[0]].keys()
+            deduped.append(DedupedError(errornames, stacktraces, self.errors))
+        deduped.sort(key=lambda d: d.canonicalError())
+        return deduped if self.backup is None else deduped + self.backup.deduped()
+    def numErrors(self):
+        sum = 0
+        for stacks in self.errors.values():
+            for record in stacks.values():
+                sum += record.cnt
+        return sum + (self.backup.numErrors() if self.backup is not None else 0)
+
+# Base-64 encoded IDs may contain '+', '/', and '=' characters; or '-' and '_' if URL-safe
+ID_CHARS = r"[\w+/=\-]*"
+DIGIT_WORDS = ID_CHARS + r"[0-9]" + ID_CHARS
+BRACKETED = r"\[[^\]]+\]"
+TO_REMOVE = re.compile(DIGIT_WORDS + r"|" + BRACKETED)
+def canonicalError(errorname):
+    return re.sub(TO_REMOVE, "", errorname)
+
+def groupBySimilarity(errornames):
+    """Return a list of lists of errornames considered similar."""
+    groups = defaultdict(list)
+    for error in errornames:
+        groups[canonicalError(error)].append(error)
+    return groups.values()
+
+
+class DedupedError(object):
+    def __init__(self, errornames, stacktraces, errors):
+        if len(errornames) > 1 and len(stacktraces) > 1:
+            raise ValueError("Cannot have multiple errornames %s and stacktraces %s" % (str(errornames), str(stacktraces)))
+        self.errornames = errornames
+        self.stacktraces = stacktraces
+        self.errors = errors
+    def __str__(self):
+        alt_disp = ""
+        if len(self.errornames) > 1:
+            num_display = min(MAX_ALT_ERRORS, len(self.errornames) - 1)
+            alt_errornames = self.errornames[1:num_display + 1]
+            alt_disp = '\n[showing %d of %d alternate error messages for this stack trace]\n%s\n' % (num_display, len(self.errornames) - 1,
+                '\t' + '\n\t'.join(map(lambda errorname: errorname.replace('\n', '\n\t'), alt_errornames)))
+        # Either alt_disp is empty, or there is only one stacktrace, (or both) so this doesn't mix
+        # and match stracktraces and errornames in an ambiguous/confusing way.
+        errorname = self.errornames[0]
+        stacktraces = map(lambda s: self.displayStack(errorname, s), self.stacktraces)
+        return errorname + '\n' + '\n'.join(stacktraces) + alt_disp
+    def displayStack(self, errorname, stack):
+        where = None
+        count = 0
+        if len(self.errornames) > 1:
+            # Count the records from all errors.
+            for error in self.errornames:
+                for record in self.errors[error].values():
+                    if where is None:
+                        where = record.where
+                    count += record.cnt
+        else:
+            # Only count the record for (errorname, stack)
+            r = self.errors[errorname][stack]
+            count = r.cnt
+            where = r.where
+        return '%d time%s, first at %s\n%s' % (count, 's' if count > 1 else '', where, stack)
+    def canonicalError(self):
+        return canonicalError(self.errornames[0])
+
+
+def read_trace(f):
+    """
+    Returns the line after the stacktrace as well as a list of stacktrace
+    lines.
+    """
+    stack = []
+    st = f.readline()
+    # read in the first few lines of the stack trace
+    for i in range(args.stack_lines):
+        if st.startswith('\t'):
+            stack.append(st)
+            st = f.readline()
+        else:
+            break
+    return st, stack
+
+TIMESTAMP_LINE = re.compile(r'\w{3} \d\d, \d+ \d\d?:\d\d:\d\d [AP]M')
+def parse(f, errors, filename, lc):
+    line = f.readline()
+    lc += 1
+    while line:
+        if line.startswith('SEVERE: '):
+            error = line
+            message = f.readline().strip()
+            lc += 1
+            if TIMESTAMP_LINE.match(message):
+                # no exception with this error; we're looking at the next entry's timestamp/logger
+                message = '(No exception)'
+            line, stack = read_trace(f)
+            errors.record(error, message, ''.join(stack), filename, lc - 1)
+            lc += len(stack) + 1
+        else:
+            line = f.readline()
+            lc += 1
+    return lc-1 # subtract 1 because the last line didn't exist
+
+def report(errors):
+    if errors.isEmpty():
+        return 'Hallelujah! No exceptions.'
+    return '\n--------------------------\n'.join(map(str, errors.deduped()))
+
+def gatherFiles(filenames, errors, run_errors):
+    for fname in filenames:
+        try:
+            parse(open(fname), errors, fname, 0)
+        except Exception as e:
+            run_errors.append('Could not parse file %s: %s' % (fname, e))
+
+def gatherDate(date, errors, run_errors):
+    # Include subdirectories like /log/jetty/vpc. Would be nice to just do
+    #    glob('{{ everlaw_logs }}/jetty/**/%04d_%02d_%02d.stderrout.log*', recursive=True)
+    # but that requires Python 3.5+.
+    log_glob = '%04d_%02d_%02d.stderrout.log*' % (date.year, date.month, date.day)
+    import fnmatch
+    filenames = [os.path.join(dirpath, filename)
+        for dirpath, dirnames, filenames in os.walk('{{ everlaw_logs }}/jetty')
+        for filename in fnmatch.filter(filenames, log_glob)]
+    if len(filenames) == 0:
+        run_errors.append('No log files matching ' + log_glob)
+    else:
+        gatherFiles(filenames, errors, run_errors)
+
+def trim_lines(text, line_length, placeholder="[...]"):
+    if line_length < len(placeholder):
+        placeholder = ""
+    return "\n".join([
+        line[:line_length - len(placeholder)] + placeholder if len(line) > line_length else line
+            for line in text.splitlines()
+    ])
+
+
+if __name__ == "__main__":
+    errors = Errors()
+    problems = []
+    date = None
+    if args.when:
+        if args.when == "yesterday":
+            date = datetime.date.today() - datetime.timedelta(1)
+        else:
+            date = datetime.date(*map(lambda x: int(x), args.when.split('-')))
+        gatherDate(date, errors, problems)
+    if args.logfile:
+        gatherFiles([args.logfile], errors, problems)
+
+    body = report(errors)
+    if len(problems) > 0:
+        body = 'Errors generating report:\n%s' % '\n'.join(problems) + '\n\n' + body
+
+    if args.silent:
+        print(body)
+    else:
+        to = 'system-messages@everlaw.com'
+        reply_to = to
+        desc = (args.node_name or socket.gethostname()) + ", " + str(date or args.logfile or "")
+        subject = 'Everlaw Automated Exception Report for %s: %d errors' % (desc, errors.numErrors())
+        wasSent = False
+        # We sometimes get exceptions where the request params can include e.g. a ton of Bates
+        # numbers, and these can cause the email report to be too big to send, even in zipped form.
+        # To avoid this we just trim each line to an arbitrary length: you can always look up
+        # the exception in SIEM or in the logs if you need the full output.
+        body = trim_lines(body, MAX_LINE_LENGTH)
+        try:
+            if len(body) <= MAX_EMAIL_SIZE:
+                esi_mail.Email(to, subject, body, replyTo=reply_to).send()
+                wasSent = True
+        finally:
+            if not wasSent:
+                # Try sending the report as a gzipped attachment
+                node_name = args.node_name + "_" if args.node_name else ""
+                filename = "error_report_" + node_name + str(date or datetime.date.today()) + ".gz"
+                try:
+                    # Write file in temporary directory so the attachment can have a meaningful name.
+                    temp_dir = tempfile.mkdtemp()
+                    try:
+                        temp_path = os.path.join(temp_dir, filename)
+                        with open(temp_path, 'wb') as temp:
+                            with gzip.GzipFile(None, 'wb', 9, temp) as gzipped:
+                                gzipped.write(body.encode('utf-8'))
+                        esi_mail.Email(to, subject, "See attached report", temp_path, replyTo=reply_to).send()
+                    finally:
+                        shutil.rmtree(temp_dir)
+                except Exception as e:
+                    fmt_err = traceback.format_exc()
+                    body = "Error encountered sending gzipped exception report:\n" + fmt_err
+                    esi_mail.Email(to, subject, body).send()

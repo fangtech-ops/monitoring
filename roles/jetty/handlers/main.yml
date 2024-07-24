@@ -1,0 +1,10 @@
+# We don't want ansible to unexpectedly restart Jetty
+# since we don't generally expect ansible to manage whether Jetty is running.
+# Just print a message indicating a restart may be necessary.
+- name: restart jetty
+  debug:
+    msg: "Jetty may need to be restarted for configuration changes to take effect.\nThis task does not restart Jetty; you should do that manually at an appropriate time."
+
+- name: restart munin
+  service: name=munin-node state=restarted
+  ignore_errors: true

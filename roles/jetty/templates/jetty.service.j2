@@ -1,0 +1,14 @@
+[Unit]
+Description=Jetty Server
+# Jetty should be started after user-data is sourced by cloud-final.service
+After=mysql.service cloud-final.service
+Wants=mysql.service
+
+[Service]
+EnvironmentFile=/etc/environment
+ExecStart=/bin/bash -e {{jetty_etc_dir}}/start.sh
+ExecStop={{jetty_etc_dir}}/stop.sh
+Type=simple
+
+[Install]
+WantedBy=cloud-init.target

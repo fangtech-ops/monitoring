@@ -1,0 +1,4 @@
+# Safe-restart Jenkins
+- name: Restart Jenkins
+  become: yes
+  service: name=jenkins state=restarted enabled=yes

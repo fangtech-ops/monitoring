@@ -1,0 +1,86 @@
+- name: create and/or set ownership of log dir and subdirectories
+  file:
+    path: "{{ jetty_log_dir }}"
+    state: "directory"
+    owner: "jetty"
+    group: "jetty"
+    recurse: true
+
+- name: add munin response log plugins
+  template:
+    src: "{{ item }}.j2"
+    dest: "/usr/share/munin/plugins/{{ jetty_proc_name }}_{{ item }}"
+    mode: 0755
+  loop:
+    - munin_response_codes
+    - munin_response_times
+    - munin_gc
+
+- name: enable response log plugins
+  file:
+    src: "/usr/share/munin/plugins/{{ jetty_proc_name }}_{{ item }}"
+    path: "/etc/munin/plugins/{{ jetty_proc_name }}_{{ item }}"
+    state: link
+  loop:
+    - munin_response_codes
+    - munin_response_times
+    - munin_gc
+
+- name: deploy telegraf jetty monitoring conf
+  template:
+    src: telegraf.{{ item }}.conf.j2
+    dest: "{{ telegraf_config_dir }}/telegraf.{{ telegraf_jetty_tag_value }}.{{ item }}.conf"
+    mode: 0644
+  loop:
+    - jetty_response_times
+    - jetty_response_codes
+  tags:
+    - update-telegraf-conf
+    - setup-telegraf
+    - only-jetty-setup-telegraf
+
+- name: create {{jetty_etc_dir}} directory
+  file: path={{jetty_etc_dir}} state=directory
+
+  # NOTE: We don't enable this service, since it requires the actual
+  #       application code to be present!
+- name: copy systemd script
+  template: src=jetty.service.j2 dest=/etc/systemd/system/{{ jetty_proc_name }}.service
+  tags: redeploy-jetty-service
+
+- name: copy jetty/stop.sh
+  template: src=stop.sh.j2 dest={{jetty_etc_dir}}/stop.sh mode=755
+
+- name: configure log monitoring
+  template: src=jetty-filebeat.yml.j2 dest="{{filebeat_conf_dir}}/{{ jetty_proc_name }}-filebeat.yml"
+
+- name: deploy monitoring scripts
+  template: src=report-java-errors.j2 dest=/usr/local/bin/report-java-errors mode=0755
+
+- name: deploy war_publish.py
+  copy:
+    src: war_publish.py
+    dest: /usr/local/bin/
+    mode: 0755
+
+- name: deploy compress_jetty_logs.sh
+  template:
+    src: compress_jetty_logs.sh.j2
+    dest: /usr/local/bin/compress_jetty_logs.sh
+    mode: 0755
+
+- name: deploy delete_java_gc_logs.sh
+  template:
+    src: delete_java_gc_logs.sh.j2
+    dest: /usr/local/bin/delete_java_gc_logs.sh
+    mode: 0755
+
+- name: get the telegraf iptables chain name
+  include_vars: "{{ role_path }}/../telegraf/defaults/main.yml"
+
+- name: give jetty telegraf write access
+  include_role:
+    name: block-ports/permit-user-access
+  vars:
+    iptables_chain: "{{ telegraf_iptables_chain }}"
+    user: "jetty"

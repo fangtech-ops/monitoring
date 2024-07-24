@@ -1,0 +1,18 @@
+# Required variables:
+# - device: the device to format and mount
+# - mntpt:  the target directory
+
+fstype: ext4
+# Some hosts skip mounting altogether, using the root FS for everything. They can set this to true.
+skip_mounts: false
+# These are passed as opts to Ansible's "filesystem" module.
+mkfs_opts: ""
+mount_opts: defaults,nofail
+# A map of mntpt names to partition offsets to define the offset option of the mount command. This
+# is primarily used for live VPCs, where, during the merge migration, web's mysql RAID was
+# converted to a regular ext4 device. Therefore, the mntpt is updated in the startup stage and
+# should be defined in the vpc's group_var file. The offset should be the Data Offset attribute of
+# 'sudo mdadm -E {device}' multiplied by 512. Example definition:
+# mount_offsets:
+#   /dev/xvdm: 134217728
+mount_offsets: {}

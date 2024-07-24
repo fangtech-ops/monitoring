@@ -1,0 +1,67 @@
+
+if [ -f {{ jetty_etc_dir }}/pre_start.sh ]; then
+    source {{jetty_etc_dir}}/pre_start.sh
+fi
+
+# Size of G1 heap regions (MB). Higher values prevent the need for
+# as many humongous allocations, but may reduce the number of regions
+# on smaller heaps.
+REGION_SIZE=32
+# Initial size of the metaspace (MB). Setting it higher allows us to avoid the Full GCs required to
+# resize the metaspace. It can still be dynamically resized by the JVM if necessary.
+INITIAL_METASPACE_SIZE=200
+
+# Location of GC log.
+JETTY_LOG_ROOT="{{jetty_log_dir}}"
+GC_LOG="${JETTY_LOG_ROOT}/$(date '+%Y_%m_%d').gc"
+# If there is already a log with this name, specify *that* log more completely by adding the last
+# time it was modified.
+if [ -f "${GC_LOG}" ]; then
+    # %z is change time (this appears to be closest to jetty uses for its logs)
+    time=$(stat ${GC_LOG} --format=%z)
+    # Add time info in format:            hh             mm              ss           SSS          hhmmssSSS
+    suffix=$(echo $time | sed "s/^.*\([0-9]\{2\}\):\([0-9]\{2\}\):\([0-9]\{2\}\).\([0-9]\{3\}\).*$/\1\2\3\4/")
+    mv "${GC_LOG}" "${GC_LOG}.${suffix}"
+fi
+
+# Min and max heap size (should be equal)
+HEAP_OPTS="-Xms${HEAP_SIZE}m -Xmx${HEAP_SIZE}m -XX:MetaspaceSize=${INITIAL_METASPACE_SIZE}m -XX:G1HeapRegionSize=${REGION_SIZE}m"
+
+# Disable explicit GC calls, which cause a full GC; enable GC logging
+GC_OPTS="-XX:+UseG1GC -XX:+DisableExplicitGC -verbose:gc -Xlog:gc*:file=$GC_LOG:time,level,tags"
+{% if jetty_heap_size|int >= 100000 %}
+GC_OPTS="$GC_OPTS -XX:+UnlockExperimentalVMOptions -XX:G1MaxNewSizePercent=38 -XX:G1ReservePercent=20 -XX:InitiatingHeapOccupancyPercent=30"
+{% endif %}
+
+JAVA_OPTS="$JAVA_OPTS $HEAP_OPTS $GC_OPTS -XX:+PrintVMOptions"
+
+JMX_OPTS="-Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.port={{jetty_jmx_port}} -Dcom.sun.management.jmxremote.rmi.port={{jetty_jmx_port}} -Dcom.sun.management.jmxremote.local.only=false -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Djava.rmi.server.hostname=127.0.0.1"
+{% if jetty_enable_jmx == true %}
+# Comment out or remove to disable JMX management service
+JAVA_OPTS="$JAVA_OPTS $JMX_OPTS"
+{% endif %}
+
+# Debugging options
+if [ "$DEBUGPORT" != "" ]; then
+    if [ "$DEBUGSUSPEND" != "y" ]; then
+        DEBUGSUSPEND="n"
+    fi
+    JAVA_OPTS="$JAVA_OPTS -Xdebug -agentlib:jdwp=transport=dt_socket,suspend=$DEBUGSUSPEND,server=y,address=$DEBUGPORT"
+    echo `date`": Starting jetty debugger on port $DEBUGPORT with SUSPEND=$DEBUGSUSPEND" >> $JETTY_LOG_ROOT/debugger.log
+fi
+
+# Access the most recent GC log via symlink.
+ln -snf "${GC_LOG}" "${JETTY_LOG_ROOT}/gc"
+
+export LANG=en_US.UTF-8
+# Hard and soft nofile (number of open files allowed by the process)
+ulimit -Hn 131072
+ulimit -Sn 131072
+
+JAVA_OPTS="-Dio.netty.native.workdir=$EVERLAW_NETTY_WORKDIR $JAVA_OPTS"
+
+ROOT=/mnt/{{ war_name }}
+sudo --preserve-env --user jetty java $JAVA_OPTS \
+    -cp "$ROOT/WEB-INF/classes:$ROOT/WEB-INF/lib/*" \
+    {{ jetty_main }} --port={{ jetty_port }} --logs=$JETTY_LOG_ROOT $NOROTATE \
+    $ROOT

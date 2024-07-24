@@ -1,0 +1,87 @@
+#!/usr/bin/env python3.8
+
+import sys
+from os import linesep
+import os.path
+import time
+import datetime
+
+# Munin plugin for tracking responses by response code over the past 5 minutes.
+
+# The response codes we track.
+codes = {"200", "500", "400", "403", "404", "302", "304", "Other"}
+
+# Read a file in backwards, line by line. Strips trailing newlines.
+def read_backwards(f):
+    newline = linesep.encode("utf-8")
+    f.seek(0,2)
+    buf = b""
+    while True:
+       delim = buf.rfind(newline)
+       if delim != -1:
+           block = buf[delim + len(newline):]
+           buf = buf[:delim]
+           yield block
+       elif f.tell() == 0:
+           yield buf
+           break
+       else:
+           to_read = min(f.tell(), 4096)
+           f.seek(-to_read,1)
+           buf = f.read(to_read) + buf
+           f.seek(-to_read,1)
+
+# Get the names of all log files we need to check to cover the time period
+# from right now back until the cutoff
+def recent_log_files(cutoff):
+    curr = datetime.datetime.today()
+    files = set()
+    while curr >= cutoff:
+        files.add("{{jetty_log_dir}}/%s.request.log" % curr.strftime("%Y_%m_%d"))
+        curr -= datetime.timedelta(days = 1)
+    return files
+
+# Extract the date/time info from a log line
+def line_date(line):
+    start = line.find(b'[')
+    end = line.find(b']')
+    return datetime.datetime.strptime(line[start+1:end].decode("utf-8"), "%d/%b/%Y:%H:%M:%S +0000")
+
+# Parse the last five minutes of request logs, calling the provided function
+# on every line.
+def parse_last_reqlogs(func):
+    cutoff = datetime.datetime.today() - datetime.timedelta(minutes = 5)
+    for f in recent_log_files(cutoff):
+        if os.path.exists(f):
+            with open(f, 'rb') as inp:
+                for l in read_backwards(inp):
+                    if l:
+                        if line_date(l) < cutoff:
+                            break
+                        else:
+                            func(l)
+
+# Extract the response code from the line and accumulate count info
+def get_resp_code(res, line):
+    parts = line.split()
+    code = parts[-3].decode("utf-8")
+    if code not in codes:
+        code = "Other"
+    res[code] = res.get(code, 0) + 1
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "config":
+        print("graph_category {{ jetty_proc_name }}")
+        print("graph_args --lower-limit 0")
+        print("graph_period second")
+        print("graph_title %s Response Codes" % "{{ jetty_proc_name }}".capitalize())
+        print("graph_vlabel count")
+        for code in codes:
+            print("resp%s.label %s responses" % (code, code))
+            print("resp%s.info 5-min count of response code %s" % (code, code))
+            print("resp%s.type GAUGE" % code)
+    else:
+        resp_codes = dict()
+        parse_last_reqlogs(lambda l: get_resp_code(resp_codes, l))
+        for code in sorted(codes):
+            print("resp%s.value %s" % (code, resp_codes.get(code, 0)))

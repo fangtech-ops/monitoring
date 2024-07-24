@@ -1,0 +1,12 @@
+---
+
+- name: Add repository for Maven
+  command: 'yum-config-manager --add-repo http://repos.fedorapeople.org/repos/dchen/apache-maven/epel-apache-maven.repo'
+
+- name: Enable the Maven repo
+  command: 'sudo sed -i s/\$releasever/6/g /etc/yum.repos.d/epel-apache-maven.repo'
+
+- name: Install Maven
+  yum: 
+    name: apache-maven
+    state: present

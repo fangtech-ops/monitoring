@@ -1,0 +1,41 @@
+- name: configure {{ mntpt }} with offset
+  block:
+    # Note that any changes here won't take effect until server restart.
+    - name: mount {{ device }} to {{ mntpt }}
+      mount:
+        src: "{{ device }}"
+        name: "{{ mntpt }}"
+        state: mounted
+        fstype: "{{ fstype }}"
+        opts: "{{ mount_opts }},offset={{ mount_offsets[device] }}"
+
+    - name: parse out device name
+      set_fact:
+        # Strip leading and trailing slashes, and replace interior slashes with '-'.
+        # So /var/lib/mysql becomes var-lib-mysql.
+        direct_io_mount_name: "{{ mntpt | regex_replace('^\\/|\\/$', '') | replace('/', '-') }}"
+
+    - name: set service name
+      set_fact:
+        direct_io_service: "{{ direct_io_mount_name }}-direct-io"
+
+    - name: copy direct i/o script
+      copy:
+        src: start-direct-io.sh
+        dest: /usr/local/bin/
+        mode: 0755
+
+    - name: copy direct i/o service
+      template:
+        src: everlaw-direct-io.service.j2
+        dest: "/etc/systemd/system/{{ direct_io_service }}.service"
+
+    # Don't actually start this yet, because the mount configuration won't take effect until server
+    # restart.
+    - name: enable direct i/o service
+      systemd:
+        name: "{{ direct_io_service }}"
+        enabled: yes
+  when:
+    - device in mount_offsets
+

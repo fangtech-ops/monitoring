@@ -1,0 +1,10 @@
+[Unit]
+Description=Turn direct i/o on for {{ mntpt }} loop device
+RequiresMountsFor={{ mntpt }}
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/start-direct-io.sh {{ mntpt }}
+
+[Install]
+WantedBy=multi-user.target

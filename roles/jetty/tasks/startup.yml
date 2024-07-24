@@ -1,0 +1,47 @@
+- name: 'create {{ jetty_etc_dir }}/start.sh'
+  template:
+    src: 'start.sh.j2'
+    dest: "{{jetty_etc_dir}}/start.sh"
+  notify:
+    - restart jetty
+
+- name: 'create {{ jetty_etc_dir }}/pre_start.sh'
+  template:
+    src: 'pre_start.sh.j2'
+    dest: "{{jetty_etc_dir}}/pre_start.sh"
+    mode: 0644
+  when: omit_jetty_pre_start is not defined
+  notify:
+    - restart jetty
+
+- name: 'add cron entry for compressing logs'
+  cron:
+    name: 'compress jetty logs'
+    cron_file: '{{ everlaw_cron_d }}/inactive'
+    user: 'root'
+    minute: '0'
+    hour: '9'
+    job: 'compress_jetty_logs.sh {{ to_cron_log_part1 }}compress_jetty_logs.sh{{ to_cron_log_part2 }}'
+
+- name: 'add cron entry for deleting gc logs'
+  cron:
+    name: 'delete java gc logs'
+    cron_file: '{{ everlaw_cron_d }}/inactive'
+    user: 'root'
+    minute: '0'
+    hour: '7'
+    job: 'delete_java_gc_logs.sh {{ to_cron_log_part1 }}delete_java_gc_logs.sh{{ to_cron_log_part2 }}'
+
+- name: 'add cron entry for error reporting'
+  cron:
+    name: 'send error reports'
+    cron_file: '{{ everlaw_cron_d }}/inactive'
+    user: 'root'
+    minute: '20'
+    hour: '0'
+    job: >
+      report-java-errors --when yesterday --node-name {{ ansible_nodename }}
+      {{ to_cron_log_part1 }}report-java-errors{{ to_cron_log_part2 }}
+  when: email_java_error_report
+
+

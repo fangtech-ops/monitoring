@@ -1,0 +1,15 @@
+
+export ESI_PREFIX={{ esi_prefix }}
+NOROTATE=""
+
+{% if jetty_fallback_bucket is defined %}
+# Set fallback bucket
+export ESI_SHARED_S3_BASE="{{ jetty_fallback_bucket }}"
+{% endif %}
+
+# Total size of heap (MB).
+HEAP_SIZE={{ jetty_heap_size }}
+
+{% if parcel_num is defined %}
+export ESI_PARCEL="{{ parcel_num }}"
+{% endif %}

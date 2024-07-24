@@ -1,0 +1,13 @@
+# This is allowed for feature-instances because it includes the vpc-manager and app roles, which
+# both depend on the jetty role.
+allow_duplicates: true
+dependencies:
+  - role: java11
+  - role: netty
+    netty_user: jetty
+  - role: pythonemail
+  - role: mount
+    vars:
+      device: "/dev/xvdz"
+      mntpt: "{{ jetty_event_logs_dir }}"
+    when: jetty_event_logs

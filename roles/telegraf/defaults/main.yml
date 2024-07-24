@@ -3,45 +3,58 @@ telegraf_dependencies:
   - apt-transport-https
   - gnupg
 
-telegraf_package_state: present
+telegraf_log_file: "/var/log/telegraf/telegraf.log"
+telegraf_package_state: "present"
 
-telegraf_config_path: /etc/telegraf
+telegraf_config_path: "/etc/telegraf"
+
+socket_listener_address: "localhost"
+socket_listener_port: 8094
 
 telegraf_global_tags: {}
 # dc: "us-east-1"
 # rack: "1a"
+#
+# These values are really just guesses; we should re-evaluate once we have a better idea how things
+# are working.
+telegraf_collection_interval: "30s"
+telegraf_collection_jitter: "5s"
+aggregator_flush_period: "{{ telegraf_collection_interval }}"
+telegraf_flush_interval: "45s"
+telegraf_flush_jitter: "10s"
 
-telegraf_agent_interval: 10s
+telegraf_agent_interval: "30s"
 telegraf_agent_round_interval: true
 telegraf_agent_metric_batch_size: 1000
 telegraf_agent_metric_buffer_limit: 10000
-telegraf_agent_collection_jitter: 0s
-telegraf_agent_flush_interval: 10s
-telegraf_agent_flush_jitter: 0s
+telegraf_agent_collection_jitter: "5s"
+telegraf_agent_flush_interval: "45s"
+telegraf_agent_flush_jitter: "5s"
 telegraf_agent_precision: ''
 telegraf_agent_debug: false
 telegraf_agent_quiet: false
 telegraf_agent_logtarget: file
-telegraf_agent_logfile: ''
-telegraf_agent_logfile_rotation_interval: 0d
-telegraf_agent_logfile_rotation_max_size: 0MB
+telegraf_agent_logfile: /var/log/telegraf/telegraf.log
+telegraf_agent_logfile_rotation_interval: 10d
+telegraf_agent_logfile_rotation_max_size: 100MB
 telegraf_agent_logfile_rotation_max_archives: 5
 telegraf_agent_log_with_timezone: ''
 telegraf_agent_hostname: ''
 telegraf_agent_omit_hostname: false
 
-telegraf_outputs: []
-# - name: influxdb_v2
-#   config:
-#     - urls = ["unix:///var/run/influxdb.sock"]
-#     - token = "abcd1234"
-#     - organization = "MyOrg"
-#     - bucket = "telegraf"
+  #telegraf_outputs: []
+  #- name: influxdb_v2
+  # config:
+  #   - urls = ["http://44.231.151.241:8086"]
+  #   - token = "abcd1234"
+  #   - organization = "MyOrg"
+  #   - bucket = "telegraf"
 
-telegraf_inputs: []
+       #telegraf_inputs: []
 # - name: cpu
 #   config:
 #     - percpu = false
 # - name: disk
 #   config:
 #     - mount_points = ["/", "/data"]
+

@@ -1,0 +1,22 @@
+# We need Netty to use something other than /tmp as its "workdir", since
+# we mount /tmp as -noexec, but Netty needs to dynamically create and link
+# against shared objects (*.so) for some native operations.
+#
+# Unfortunately, this task only *sets the environment variable*, so all
+# users of "netty" will still need to invoke the java exe with this flag:
+#
+#   -Dio.netty.native.workdir="$EVERLAW_NETTY_WORKDIR"
+#
+- name: Set system-wide $EVERLAW_NETTY_WORKDIR env var
+  lineinfile:
+    path: /etc/environment
+    regexp: '^EVERLAW_NETTY_WORKDIR='
+    line: 'EVERLAW_NETTY_WORKDIR="{{ netty_workdir }}"'
+
+- name: Create the $EVERLAW_NETTY_WORKDIR
+  file:
+    path: "{{ netty_workdir }}"
+    state: directory
+    owner: "{{ netty_user }}"
+    group: "{{ netty_user }}"
+    mode: '0755'

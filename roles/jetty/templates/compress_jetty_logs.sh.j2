@@ -1,0 +1,52 @@
+#!/bin/bash
+
+# alert config
+level="Warning"
+alerting_tool="cron"
+service=$(basename "$0")
+summary="Error in compressing jetty logs"
+
+TEMPD=""
+ext=".gz"
+
+gzip_no_clobber() {
+    log=$1; shift
+    log_gz=$1; shift
+
+    [[ -d $TEMPD ]] || TEMPD=$(mktemp --directory)
+
+    compressed="${TEMPD}/$(basename "$log")${ext}"
+    gzip --stdout "$log" > "$compressed"
+
+    if zdiff "$compressed" "$log_gz" &> /dev/null; then
+        # compressed and uncompressed logs are the same
+        rm "$log"
+    else
+        # compressed and uncompressed logs differ
+        log_dir=$(dirname "$log_gz")
+        dest="$(basename "$log").$(stat --format="%Y" "$log")${ext}"
+        mv --force --backup=numbered "$compressed" "$log_dir/$dest" && rm "$log"
+        chown jetty:jetty "$log_dir/$dest"
+    fi
+}
+
+out=$(find {{ everlaw_logs }}/jetty -mtime +4 -type f -name '[0-9]*' -not -name '*.gz' |\
+{
+    while read log_file; do
+        target="${log_file}${ext}"
+        if [[ -f $target ]]; then
+            gzip_no_clobber "$log_file" "$target"
+        else
+            gzip "$log_file"
+        fi
+    done
+} 2>&1) || python3.8 -m esi_mail \
+    --alert \
+    --level "${level}" \
+    --tool "${alerting_tool}" \
+    --service "${service}" \
+    --subject "${summary}" \
+    --message "${out}" \
+    $ALERT_EMAIL
+
+[[ -d $TEMPD ]] && rm --force --recursive "$TEMPD"

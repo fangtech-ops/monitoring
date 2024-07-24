@@ -1,0 +1,28 @@
+jetty_log_base: "{{ everlaw_logs }}/jetty"
+jetty_etc_base: /etc/jetty
+jetty_proc_name: "{{ 'jetty-' + jetty_proc_suffix if jetty_proc_suffix != '' else 'jetty' }}"
+jetty_log_dir: "{{jetty_log_base}}{{ '/' + jetty_proc_suffix if jetty_proc_suffix != '' else '' }}"
+jetty_event_logs_dir: "{{ jetty_log_dir }}/events"
+jetty_etc_dir: "{{jetty_etc_base}}{{ '/' + jetty_proc_suffix if jetty_proc_suffix != '' else '' }}"
+jetty_enable_jmx: false
+jetty_jmx_port: 9019
+# TODO: stop sending these reports and rely only on Bugsnag + Podio
+email_java_error_report: true
+
+jetty_heap_size_target: "{{ ansible_memtotal_mb // jetty_heap_target_mem_fraction }}"
+# Don't set this value directly! Use jetty_heap_size_target instead.
+# This should always be limited by jetty_heap_max_mb!
+jetty_heap_size: "{{ [[jetty_heap_size_target|int, jetty_heap_max_mb|int] | min, jetty_heap_min_mb] | max }}"
+
+telegraf_jetty_tag_value: "{{ 'vpc' if jetty_proc_suffix == 'vpc' else 'web' }}"
+
+# Undefined required variables set elsewhere
+# war_name
+# esi_prefix
+# jetty_proc_suffix
+# jetty_main
+# jetty_port
+# jetty_event_logs
+# jetty_heap_target_mem_fraction
+# jetty_heap_min_mb
+# jetty_heap_max_mb

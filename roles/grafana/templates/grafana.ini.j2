@@ -16,11 +16,11 @@ plugins = {{ grafana_data_dir }}/plugins
 # HTTP options
 [server]
 {% if grafana_server.protocol is undefined or grafana_server.protocol in ['http', 'https'] %}
-http_addr = {{ grafana_address }}
-http_port = {{ grafana_port }}
+http_addr = 
+http_port = 3000
 {% endif %}
-domain = {{ grafana_domain }}
-root_url = {{ grafana_url }}
+domain = fangtech88.com
+root_url = https://grafana.fangtech88.com:3000
 {% for k,v in grafana_server.items() %}
 {%   if not k in ['http_addr', 'http_port', 'domain', 'root_url'] %}
 {{ k }} = {{ v }}

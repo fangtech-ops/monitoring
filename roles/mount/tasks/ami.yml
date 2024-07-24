@@ -1,0 +1,15 @@
+- name: mkfs {{ device }} for {{ mntpt }}
+  filesystem:
+    fstype: "{{ fstype }}"
+    dev: "{{ device }}"
+    opts: "{{ mkfs_opts }}"
+  when: not skip_mounts
+
+- name: mount {{ device }} to {{ mntpt }}
+  mount:
+    src: "{{ device }}"
+    name: "{{ mntpt }}"
+    state: mounted
+    fstype: "{{ fstype }}"
+    opts: "{{ mount_opts }}"
+  when: not skip_mounts

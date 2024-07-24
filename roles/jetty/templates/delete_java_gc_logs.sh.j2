@@ -1,0 +1,19 @@
+#!/bin/bash
+
+# alert config
+level="Warning"
+alerting_tool="cron"
+service=$(basename "$0")
+summary="Error in deleting jetty GC logs"
+
+out=$(find {{ everlaw_logs }}/jetty \
+    -mtime +90 -type f -regextype posix-egrep -regex '.*gc(\.[0-9]+)?\.gz' \
+    -delete 2>&1) \
+|| python3.8 -m esi_mail \
+    --alert \
+    --level "${level}" \
+    --tool "${alerting_tool}" \
+    --service "${service}" \
+    --subject "${summary}" \
+    --message "${out}" \
+    $ALERT_EMAIL

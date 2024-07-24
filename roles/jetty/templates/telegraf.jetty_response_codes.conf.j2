@@ -1,0 +1,12 @@
+[[inputs.tail]]
+    alias = "jetty_response_codes"
+    files = ["{{ jetty_log_dir }}/*.request.log"]
+    name_override = "jetty_response_codes"
+
+    data_format = "grok"
+
+    grok_patterns = ['%{IPORHOST} %{DATA} - \[%{HTTPDATE}\] "%{WORD} %{URIPATHPARAM} %{EMAILLOCALPART}" %{INT:response_code:int} %{INT} %{INT}']
+
+    [inputs.tail.tags]
+        jetty = "{{ telegraf_jetty_tag_value }}"
+        aggregator = "value_count"

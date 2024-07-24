@@ -1,0 +1,3 @@
+version: "2.7.27"
+url: "https://awscli.amazonaws.com/awscli-exe-linux-x86_64-{{ version }}.zip"
+checksum: "sha256:6a0ea8a4df5b2da48beb02dc8f2eb152f613738d24888382f1a0726f544c587a"

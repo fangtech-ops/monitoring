@@ -1,9 +1,6 @@
 # {{ ansible_managed }}
 
 [global_tags]
-{% for key, value in telegraf_global_tags %}
-  {{ key }} = "{{ value }}"
-{% endfor %}
 
 [agent]
   interval = "{{ telegraf_agent_interval }}"
@@ -27,38 +24,72 @@
   hostname = "{{ telegraf_agent_hostname }}"
   omit_hostname = {{ telegraf_agent_omit_hostname | lower }}
 
-{% for output in telegraf_outputs %}
+[[outputs.influxdb_v2]]
+  urls = ["http://44.231.151.241:8086"]
+  token = "abcd1234"
+  organization = "MyOrg"
+  bucket = "telegraf"
 
-[[outputs.{{ output.name }}]]
-{%   for item in output.config | d([]) %}
-  {{ item }}
-{%   endfor %}
-{% endfor %}
+[[inputs.cpu]]
+  percpu = true
+  totalcpu = true
+  collect_cpu_time = false
+  report_active = false
+[[inputs.disk]]
+  mount_points = ["/"]
+  ignore_fs = ["tmpfs", "devtmpfs", "devfs", "overlay", "aufs", "squashfs"]
+[[inputs.diskio]]
+[[inputs.mem]]
+[[inputs.net]]
+[[inputs.processes]]
+[[inputs.swap]]
+[[inputs.system]]
+[[inputs.netstat]]
+[[inputs.kernel]]
+[[inputs.kernel_vmstat]]
+[[inputs.interrupts]]
 
-{%- for input in telegraf_inputs %}
 
-[[inputs.{{ input.name }}]]
-{%   for item in input.config  | d([]) %}
-{%     if item is mapping %}
-  [[inputs.{{ input.name }}.{{ item | first }}]]
-{%       for item2 in item.config | d([]) %}
-{%         if item2 is mapping %}
-    [[inputs.{{ input.name }}.{{ item | first }}.{{ item2 | first }}]]
-{%           for item3 in item2.config | d([]) %}
-      {{ item3 }}
-{%           endfor %}
-{%         else %}
-    {{ item2 }}
-{%         endif %}
-{%       endfor %}
-{%     else %}
-  {{ item }}
-{%     endif %}
-{%   endfor %}
-{%   if input.tags is defined %}
-  [[inputs.{{ input.name }}.tags]]
-{%     for tag in input.tags %}
-    {{ tag }}
-{%     endfor %}
-{%  endif %}
-{% endfor %}
+[[aggregators.basicstats]]
+  period = "{{ aggregator_flush_period }}"
+  stats = ["max"]
+  drop_original = true
+  [aggregators.basicstats.tagpass]
+    aggregator = ["max"]
+
+  [[aggregators.basicstats]]
+  period = "{{ aggregator_flush_period }}"
+  stats = ["mean"]
+  drop_original = true
+  [aggregators.basicstats.tagpass]
+    aggregator = ["mean"]
+
+  [[aggregators.basicstats]]
+  period = "{{ aggregator_flush_period }}"
+  stats = ["count"]
+  drop_original = true
+  [aggregators.basicstats.tagpass]
+    aggregator = ["count", "max_mean_median_95_count"]
+
+  [[aggregators.basicstats]]
+  period = "{{ aggregator_flush_period }}"
+  stats = ["max", "mean"]
+  drop_original = true
+  [aggregators.basicstats.tagpass]
+    aggregator = ["max_mean_median_95_count", "max_mean_median_95"]
+
+  [[aggregators.quantile]]
+  period = "{{ aggregator_flush_period }}"
+  drop_original = true
+  quantiles = [0.5, 0.95]
+  algorithm = "t-digest"
+  [aggregators.quantile.tagpass]
+    aggregator = ["max_mean_median_95_count", "max_mean_median_95"]
+
+  [[aggregators.valuecounter]]
+  period = "{{ aggregator_flush_period }}"
+  fields = ["response_code"]
+  drop_original = true
+  [aggregators.valuecounter.tagpass]
+      aggregator = ["value_count"]
+

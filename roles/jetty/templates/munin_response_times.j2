@@ -1,0 +1,104 @@
+#!/usr/bin/env python3.8
+
+import sys
+from os import linesep
+import os.path
+import time
+import datetime
+
+# Munin plugin for reporting trailing 5-minute avg and max response times
+# (excluding longpoll requests).
+
+# Read a file backwards, trimming trailing newlines.
+def read_backwards(f):
+    newline = linesep.encode("utf-8")
+    f.seek(0,2)
+    buf = b""
+    while True:
+       delim = buf.rfind(newline)
+       if delim != -1:
+           block = buf[delim + len(newline):]
+           buf = buf[:delim]
+           yield block
+       elif f.tell() == 0:
+           yield buf
+           break
+       else:
+           to_read = min(f.tell(), 4096)
+           f.seek(-to_read,1)
+           buf = f.read(to_read) + buf
+           f.seek(-to_read,1)
+
+# Get the paths of all logfiles between now and the cutoff time.
+def recent_log_files(cutoff):
+    curr = datetime.datetime.today()
+    files = set()
+    while curr >= cutoff:
+        files.add("{{jetty_log_dir}}/%s.request.log" % curr.strftime("%Y_%m_%d"))
+        curr -= datetime.timedelta(days = 1)
+    return files
+
+# Parse the date from a log line.
+def line_date(line):
+    start = line.find(b'[')
+    end = line.find(b']')
+    return datetime.datetime.strptime(line[start+1:end].decode("utf-8"), "%d/%b/%Y:%H:%M:%S +0000")
+
+# Apply the callback to each line in the last 5 minutes of request logs.
+def parse_last_reqlogs(func):
+    cutoff = datetime.datetime.today() - datetime.timedelta(minutes = 5)
+    for f in recent_log_files(cutoff):
+        if os.path.exists(f):
+            with open(f, 'rb') as inp:
+                for l in read_backwards(inp):
+                    if l:
+                        if line_date(l) < cutoff:
+                            break
+                        else:
+                            func(l)
+
+# Extract and accumuluate the request time from the log line.
+def get_resp_time(stats, line):
+    idx = line.rfind(b" ")
+    if b'poll.rest' not in line:
+        time = int(line[idx:])
+        stats.append(time)
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "config":
+        print("graph_category {{ jetty_proc_name }}")
+        print("graph_args --logarithmic")
+        print("graph_period second")
+        print("graph_title %s Response Time" % "{{ jetty_proc_name }}".capitalize())
+        print("graph_vlabel time(ms)")
+        print("respavg.label avg response time")
+        print("respavg.info 5-min avg response time")
+        print("respavg.type GAUGE")
+        print("resp95.label 95% response time")
+        print("resp95.info 5-min 95% response time")
+        print("resp95.type GAUGE")
+        print("respmed.label median response time")
+        print("respmed.info 5-min median response time")
+        print("respmed.type GAUGE")
+        print("respmax.label max response time")
+        print("respmax.info 5-min max response time")
+        print("respmax.type GAUGE")
+    else:
+        resp_data = []
+        parse_last_reqlogs(lambda l: get_resp_time(resp_data, l))
+        if resp_data:
+            resp_data.sort()
+            avg = sum(resp_data) // len(resp_data)
+            nine_idx = int(len(resp_data) * 0.95)
+            nine_val = resp_data[nine_idx]
+            med_val = resp_data[len(resp_data) // 2]
+            max_val = resp_data[-1]
+        else:
+            avg = 0
+            nine_val = 0
+            max_val = 0
+            med_val = 0
+        print("respavg.value ", avg)
+        print("respmax.value ", max_val)
+        print("respmed.value ", med_val)
+        print("resp95.value ", nine_val)

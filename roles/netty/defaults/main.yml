@@ -1,0 +1,6 @@
+# See https://docs.google.com/document/d/1qpq1ii8oPudmlHjapJjCPRelOt1PAzDN_CHMWD1gfDs/edit#heading=h.y35o8ez3irjx
+netty_workdir: "{{ executable_tmpdir }}/netty"
+
+# There is no default for this variable! All dependent roles
+# must specify it explicitly.
+#netty_user:

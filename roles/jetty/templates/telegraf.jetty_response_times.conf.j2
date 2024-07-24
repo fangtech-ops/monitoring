@@ -1,0 +1,12 @@
+[[inputs.tail]]
+    alias = "jetty_response_times"
+    files = ["{{ jetty_log_dir }}/*.request.log"]
+    name_override = "jetty_response_times"
+
+    data_format = "grok"
+
+    grok_patterns = ['%{IPORHOST} %{DATA} - \[%{HTTPDATE}\] "%{WORD} %{URIPATHPARAM} %{EMAILLOCALPART}" %{INT} %{INT} %{INT:response_time:int}']
+
+    [inputs.tail.tags]
+        jetty = "{{ telegraf_jetty_tag_value }}"
+        aggregator = "max_mean_median_95"

@@ -1,0 +1,23 @@
+---
+- name: Configure Jenkins Port for Debian
+  template:
+    src: etc.default.jenkins.j2
+    dest: /etc/default/jenkins
+  register: config_changed
+  when: ansible_os_family == "Debian"
+
+
+- name: Restart jenkins now
+  service: name=jenkins state=restarted
+  when: config_changed.changed
+
+
+- name: Configure Jenkins E-mail
+  when: email is defined and (ansible_os_family == "Debian" or ansible_os_family == "RedHat")
+  template:
+    src: hudson.tasks.Mailer.xml.j2
+    dest: "{{ jenkins_lib }}/hudson.tasks.Mailer.xml"
+    owner: jenkins
+    group: jenkins
+    mode: 0644
+

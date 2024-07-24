@@ -1,0 +1,15 @@
+---
+
+- name: Install software-properties-common
+  apt:
+    name: software-properties-common
+    state: present
+    update_cache: yes
+    cache_valid_time: 86400
+
+
+- name: Add jenkins apt-key
+  apt_key: data="{{ lookup('file', 'jenkins-ci.org.key') }}" state=present
+
+- name: Add Jenkins repository
+  apt_repository: repo='{{ jenkins.deb.repo }}' state=present update_cache=yes

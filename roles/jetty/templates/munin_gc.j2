@@ -1,0 +1,68 @@
+#!/usr/bin/env python3.8
+
+import sys
+from os import linesep
+
+# Munin plugin for tracking jetty heap usage as reported by the gc log.
+# All we do is take the last line in the latest gc log and see what the heap
+# usage was post-collection.  This should generally be up-to-date.
+
+# Read a file in backwards, line by line. Strips trailing newlines.
+def read_backwards(f):
+    newline = linesep.encode("utf-8")
+    f.seek(0,2)
+    buf = b""
+    while True:
+       delim = buf.rfind(newline)
+       if delim != -1:
+           block = buf[delim + len(newline):]
+           buf = buf[:delim]
+           yield block
+       elif f.tell() == 0:
+           yield buf
+           break
+       else:
+           to_read = min(f.tell(), 4096)
+           f.seek(-to_read,1)
+           buf = f.read(to_read) + buf
+           f.seek(-to_read,1)
+
+def is_heap_line(l):
+    return b'->' in l and l.endswith(b'ms')
+
+def get_last_heap_info():
+    with open('{{jetty_log_dir}}/gc', 'rb') as inp:
+        for l in read_backwards(inp):
+            if is_heap_line(l):
+                return parse_heap_line(l)
+    return None
+
+def parse_heap_line(line):
+    # Line looks like: [... Heap: XXG(YYG)->PPG(QQG)], we get the post-gc heap
+    # size (PP)
+    heap_start = line.rfind(b"->")
+    heap_end = line.rfind(b"(")
+    unit = line[heap_end-1]
+    if unit == ord('G'):
+        fac = 0
+    elif unit == ord('M'):
+        fac = 3
+    elif unit == ord('K'):
+        fac = 6 # Probably under our useful threshold, but whatever...
+    elif unit == ord('B'):
+        fac = 9
+    return float(line[heap_start+2:heap_end-1]) / (10**fac)
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "config":
+        print("graph_category {{ jetty_proc_name }}")
+        print("graph_args --lower-limit 0")
+        print("graph_period second")
+        print("graph_title %s GC Info" % "{{ jetty_proc_name }}".capitalize())
+        print("graph_vlabel GB")
+        print("gc_heap.label Heap Usage")
+        print("gc_heap.info Latest post-gc heap size")
+        print("gc_heap.type GAUGE")
+    else:
+        last = get_last_heap_info() or 0
+        print("gc_heap.value %s" % last)

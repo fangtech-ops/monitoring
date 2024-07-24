@@ -1,0 +1,59 @@
+# Adapted from https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html
+
+- name: get current awscli version
+  ansible.builtin.command:
+    cmd: aws --version
+  register: current_awscli_version_output
+  check_mode: no
+  ignore_errors: yes
+
+- ansible.builtin.set_fact:
+    current_awscli_version: >-
+      {{
+        (current_awscli_version_output.stdout | split(" ") | select("match", "^aws-cli/.*") | first | split("/"))[1]
+        if current_awscli_version_output.stdout != ""
+        else ""
+      }}
+
+- name: fetch, unpack, and install awscliv2
+  when: current_awscli_version != version
+  block:
+    - name: show what we're installing
+      debug:
+        msg:
+          version: "{{ version }}"
+          url: "{{ url }}"
+
+    - name: create tmpdir
+      tempfile:
+        path: "{{ executable_tmpdir }}"
+        state: directory
+        suffix: -install-awscliv2
+      register: tmpdir
+      check_mode: no
+
+    - name: fetch
+      get_url:
+        url: "{{ url }}"
+        dest: "{{ tmpdir.path }}/awscliv2.zip"
+        checksum: "{{ checksum }}"
+
+    - name: unpack
+      unarchive:
+        remote_src: yes
+        src: "{{ tmpdir.path }}/awscliv2.zip"
+        dest: "{{ tmpdir.path }}/"
+        extra_opts:
+          - "-q"  # quiet
+      ignore_errors: "{{ ansible_check_mode }}"
+
+    - name: install
+      command: "{{ tmpdir.path }}/aws/install --update"
+
+  always:
+    - name: clean up
+      file:
+        path: "{{ tmpdir.path }}"
+        state: absent
+      ignore_errors: yes
+      no_log: yes  # the dist contains thousands of files...
